@@ -1,0 +1,134 @@
+# data/peaks.yaml
+# Everest Base Camp region peaks (and one pass) commonly visible along the EBC/Gokyo/Cho La variants.
+# Fields: id, names (aliases), latlon {lat, lon}, elev_m (optional)
+- id: ama-dablam
+  names: ["Ama Dablam"]
+  latlon: {lat: 27.86167, lon: 86.86139}
+  elev_m: 6812
+  
+- id: mount-everest
+  names: ["Mount Everest", "Sagarmatha", "Chomolungma", "Qomolangma"]
+  latlon: {lat: 27.98833, lon: 86.92528}
+  elev_m: 8849
+
+- id: lhotse
+  names: ["Lhotse"]
+  latlon: {lat: 27.961666, lon: 86.933334}
+  elev_m: 8516
+
+- id: makalu
+  names: ["Makalu"]
+  latlon: {lat: 27.88683, lon: 87.08650}
+  elev_m: 8485
+
+- id: lhotse-shar
+  names: ["Lhotse Shar"]
+  latlon: {lat: 27.958303, lon: 86.943450}
+  elev_m: 8383
+
+- id: cho-oyu
+  names: ["Cho Oyu"]
+  latlon: {lat: 28.094168, lon: 86.660835}
+  elev_m: 8188
+
+- id: nuptse
+  names: ["Nuptse", "Nubtse"]
+  latlon: {lat: 27.966389, lon: 86.890000}
+  elev_m: 7861
+
+- id: nuptse-ii
+  names: ["Nuptse II"]
+  latlon: {lat: 27.964444, lon: 86.892778}
+  elev_m: 7827
+
+- id: pumori
+  names: ["Pumori", "Pumo Ri"]
+  latlon: {lat: 28.01472, lon: 86.82806}
+  elev_m: 7165
+
+- id: baruntse
+  names: ["Baruntse"]
+  latlon: {lat: 27.871599, lon: 86.980161}
+  elev_m: 7162
+
+- id: nirekha
+  names: ["Nirekha Peak", "Nirekha"]
+  latlon: {lat: 27.97750, lon: 86.76530}
+  elev_m: 6159
+
+- id: ama-dablam
+  names: ["Ama Dablam"]
+  latlon: {lat: 27.861213, lon: 86.861468}
+  elev_m: 6812
+
+- id: kangtega
+  names: ["Kangtega", "Kantega", "The Snow Saddle"]
+  latlon: {lat: 27.792656, lon: 86.816942}
+  elev_m: 6782
+
+- id: thamserku
+  names: ["Thamserku"]
+  latlon: {lat: 27.789922, lon: 86.785399}
+  elev_m: 6623
+
+- id: taboche
+  names: ["Taboche", "Tawoche", "Taweche"]
+  latlon: {lat: 27.897461, lon: 86.779080}
+  elev_m: 6495
+
+- id: mera-peak
+  names: ["Mera Peak", "Mera (North/Central)"]
+  latlon: {lat: 27.709160, lon: 86.868289}
+  elev_m: 6476
+
+- id: cholatse
+  names: ["Cholatse", "Chola Tse", "Cho La Tse", "Jobo Lhaptshan"]
+  latlon: {lat: 27.920229, lon: 86.766362}
+  elev_m: 6440
+
+- id: arakam-tse
+  names: ["Arakam Tse"]
+  latlon: {lat: 27.941720, lon: 86.752650}
+  elev_m: 5904
+
+- id: island-peak
+  names: ["Island Peak", "Imja Tse"]
+  latlon: {lat: 27.920780, lon: 86.935206}
+  elev_m: 6165
+
+- id: pheriche-peak
+  names: ["Pheriche Peak"]  # local viewpoint above Pheriche; not an NMA trekking peak
+  latlon: {lat: 27.890825, lon: 86.799974}
+  elev_m: 5100
+
+- id: kyajo-ri
+  names: ["Kyajo Ri", "Kyazo Ri"]
+  latlon: {lat: 27.909167, lon: 86.673611}
+  elev_m: 6151
+
+- id: lobuche-east
+  names: ["Lobuche East", "Lobuje East", "Lobuche Peak"]
+  latlon: {lat: 27.958725, lon: 86.790812}
+  elev_m: 6119
+
+- id: phari-lapcha
+  names: ["Phari Lapcha", "Pharilapcha", "Machermo Peak"]
+  latlon: {lat: 27.929281, lon: 86.680887}
+  elev_m: 6017
+
+- id: kwangde-ri
+  names: ["Kongde Ri", "Kwangde Ri", "Kongde"]
+  latlon: {lat: 27.793138, lon: 86.642180}
+  elev_m: 6187
+
+- id: khumbila
+  names: ["Khumbila", "Khumbu Yül-Lha", "Khumbi Yul-Lha"]
+  latlon: {lat: 27.848427, lon: 86.709144}
+  elev_m: 5761
+
+- id: nangkartshang
+  names: ["Nangkartshang", "Nangkartsang", "Nangkar Tshang"]
+  latlon: {lat: 27.908947, lon: 86.839260}
+  elev_m: 5083
+
+

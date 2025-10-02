@@ -1,0 +1,17 @@
+# Core
+numpy
+PyYAML
+pillow
+pillow-heif
+
+# Elasticsearch client
+elasticsearch>=8
+
+# UI
+streamlit
+
+# Embedding stack (SigLIP via Hugging Face)
+transformers
+huggingface-hub
+torch
+torchvision

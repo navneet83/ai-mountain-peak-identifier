@@ -1,220 +1,162 @@
-#!/usr/bin/env python3
+# src/ai_mpi/embeddings.py
 """
-Create (or re-create) the two Elasticsearch indices for the demo.
+Tiny wrapper around a SigLIP-2 model to produce L2-normalized embeddings for:
+  - IMAGEs  → used for photo vectors (kNN over photos.clip_image)
+  - TEXT    → used for peak name prototypes / queries (kNN over peaks_catalog.text_embed)
 
-Indices
--------
-1) peaks_catalog
-   - One document per mountain peak (Everest, Ama Dablam, etc.)
-   - Fields:
-       id (keyword)           : stable identifier / slug
-       names (keyword[])      : primary name + aliases (exact matching)
-       latlon (geo_point)     : peak location (useful in UI or sanity checks)
-       text_embed (dense_vec) : SigLIP-2 TEXT embedding (dims must match model)
+Why this wrapper exists
+-----------------------
+- Keeps scripts simple (one place to choose model/device and preprocessing).
+- Always returns **float32, unit-length** vectors so **cosine = dot product**,
+  which is what Elasticsearch's cosine similarity expects for stable scoring.
 
-2) photos
-   - One document per photo in library (photos that I clicked during my trek)
-   - Fields:
-       path (keyword)          : relative path used by the UI to open a thumbnail
-       clip_image (dense_vec)  : SigLIP-2 IMAGE embedding (same dims as text)
-       predicted_peaks (kw[])  : top-k peak guesses assigned at index time
-       gps (geo_point)         : parsed EXIF GPS if present
-       shot_time (date)        : parsed EXIF DateTimeOriginal if present
+Model selection
+---------------
+Default model id can be overridden at runtime:
 
-Why dense_vector + HNSW?
-------------------------
-We want approximate nearest-neighbor (ANN) search over embeddings. The can be done
-in Elasticsearch using `dense_vector` with `index=true` + HNSW index_options,
-and a similarity (cosine here).
+  - Environment variable:  SIGLIP_MODEL_ID
+  - Constructor argument:  Siglip2(model_id="google/…")
 
-Usage
------
-# Create indices if missing (non-destructive)
-python scripts/create_indices.py
+The default below is a light model that runs on CPU easily. If you switch to a
+larger/hi-res model, make sure your Elasticsearch `dense_vector.dims` matches.
 
-# Force re-create (deletes & recreates both indices)
-python scripts/create_indices.py --recreate
-
-# Customize names / dims / HNSW params
-python scripts/create_indices.py --photos-index photos --peaks-index peaks_catalog --dims 768 --hnsw-m 16 --hnsw-ef 128
+Note: Both image and text encoders come from the same checkpoint, exposed by HF
+via `get_image_features` and `get_text_features`.
 """
 
 from __future__ import annotations
+
 import os
-import argparse
-from elasticsearch import Elasticsearch
+from typing import Iterable, List
+
+import numpy as np
+import torch
+from transformers import AutoModel, AutoProcessor
 
 
-# -----------------------------------------------------------------------------
-# Client construction (API key via env vars)
-# -----------------------------------------------------------------------------
-def es_client() -> Elasticsearch:
+class Siglip2:
     """
-    Build an Elasticsearch client from environment variables.
+    Minimal, friendly wrapper around a SigLIP-2 checkpoint.
 
-    Supported (pick one auth path):
-      - ES_CLOUD_ID + (ES_API_KEY_B64  |  ES_API_KEY_ID + ES_API_KEY)
-      - ES_URL      + (ES_API_KEY_B64  |  ES_API_KEY_ID + ES_API_KEY)
-      - ES_URL only (unauthenticated local dev)
+    Public methods:
+      - image_vec(PIL.Image) -> np.ndarray   # shape: (D,)
+      - text_vec(str)        -> np.ndarray   # shape: (D,)
 
+    All outputs are float32 and L2-normalized.
     """
-    cloud_id    = os.getenv("ES_CLOUD_ID")
-    url         = os.getenv("ES_URL", "http://localhost:9200")
-    api_key_b64 = os.getenv("ES_API_KEY_B64")
-    api_key_id  = os.getenv("ES_API_KEY_ID")
-    api_key     = os.getenv("ES_API_KEY")
 
-    if cloud_id:
-        if api_key_b64:
-            return Elasticsearch(cloud_id=cloud_id, api_key=api_key_b64)
-        if api_key_id and api_key:
-            return Elasticsearch(cloud_id=cloud_id, api_key=(api_key_id, api_key))
-        raise SystemExit("Elastic Cloud detected: set ES_API_KEY_B64 or ES_API_KEY_ID/ES_API_KEY.")
-    # self-hosted URL path
-    if api_key_b64:
-        return Elasticsearch(url, api_key=api_key_b64)
-    if api_key_id and api_key:
-        return Elasticsearch(url, api_key=(api_key_id, api_key))
-    return Elasticsearch(url)  # local dev w/o auth
+    def __init__(
+            self,
+            model_id: str | None = None,
+            device: str | None = None,
+            max_text_len: int = 64,
+    ) -> None:
+        """
+        Args:
+          model_id: HF model id; if None, uses env SIGLIP_MODEL_ID or a sensible default.
+          device:  "cuda" / "cpu" / "mps"; if None, auto-detect CUDA → else CPU.
+          max_text_len: tokenizer max length for text prompts (keep short & factual).
+        """
+        # Keep the existing default model; override if needed
+        default_model = "google/siglip2-base-patch16-224"
+        self.model_id = model_id or os.getenv("SIGLIP_MODEL_ID", default_model)
 
+        # Device selection: prefer CUDA if available; otherwise CPU works fine for small batches.
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
 
-# -----------------------------------------------------------------------------
-# Mappings
-# -----------------------------------------------------------------------------
-def peaks_catalog_mapping(dims: int, hnsw_m: int, hnsw_ef: int) -> dict:
-    """
-    Mapping for the 'peaks_catalog' index.
+        # Processor handles both image + text preprocessing for SigLIP-2.
+        # (Some processors print a warning about "slow" vs "fast"—safe to ignore.)
+        self.proc = AutoProcessor.from_pretrained(self.model_id)
 
-    Notes:
-      * 'names' is keyword (exact terms) because we use it in filters / display.
-      * 'text_embed' is searchable ANN vector space using cosine similarity.
-    """
-    return {
-        "mappings": {
-            "properties": {
-                "id": {"type": "keyword"},
-                "names": {"type": "keyword"},
-                "latlon": {"type": "geo_point"},
-                "text_embed": {
-                    "type": "dense_vector",
-                    "dims": dims,                 # must match SigLIP-2 output size
-                    "index": True,                # enable ANN
-                    "similarity": "cosine",       # CLIP/SigLIP uses cosine typically
-                    "index_options": {            # HNSW configuration
-                        "type": "hnsw",
-                        "m": hnsw_m,
-                        "ef_construction": hnsw_ef
-                    }
-                }
-            }
-        }
-    }
+        # The model exposes get_image_features / get_text_features on forward.
+        self.model = AutoModel.from_pretrained(self.model_id).to(self.device).eval()
 
+        # Store config
+        self.max_text_len = int(max_text_len)
 
-def photos_mapping(dims: int, hnsw_m: int, hnsw_ef: int) -> dict:
-    """
-    Mapping for the 'photos' index.
+    # ---------------------------------------------------------------------
+    # Internal helper: L2 normalization with numerical safety
+    # ---------------------------------------------------------------------
+    @staticmethod
+    def _norm(x: np.ndarray) -> np.ndarray:
+        """
+        Normalize vectors to unit length along last dimension so cosine == dot.
 
-    Notes:
-      * 'predicted_peaks' is keyword[] so we can do exact term matches and use it
-        as a signal in fusion (RRF).
-      * 'shot_time' uses a permissive date format so ISO8601 strings parse cleanly.
-    """
-    return {
-        "mappings": {
-            "properties": {
-                "path": {"type": "keyword"},
-                "clip_image": {
-                    "type": "dense_vector",
-                    "dims": dims,
-                    "index": True,
-                    "similarity": "cosine",
-                    "index_options": {
-                        "type": "hnsw",
-                        "m": hnsw_m,
-                        "ef_construction": hnsw_ef
-                    }
-                },
-                "predicted_peaks": {"type": "keyword"},
-                "gps": {"type": "geo_point"},
-                "shot_time": {
-                    "type": "date",
-                    "format": "strict_date_optional_time||epoch_millis"
-                }
-            }
-        }
-    }
+        Works for shape (D,) or (N,D). Adds tiny epsilon to avoid div by zero.
+        """
+        denom = np.linalg.norm(x, axis=-1, keepdims=True) + 1e-12
+        return x / denom
 
+    # ---------------------------------------------------------------------
+    # Public API: single image → vector
+    # ---------------------------------------------------------------------
+    def image_vec(self, pil_image) -> np.ndarray:
+        """
+        Compute a single IMAGE embedding (float32, unit-norm).
 
-# -----------------------------------------------------------------------------
-# Create / recreate helpers
-# -----------------------------------------------------------------------------
-def create_index_if_missing(es: Elasticsearch, name: str, body: dict) -> None:
-    """Create an index if it doesn't exist; otherwise leave it as-is."""
-    if es.indices.exists(index=name):
-        print(f"[ok] index exists: {name}")
-        return
-    es.indices.create(index=name, body=body)
-    print(f"[new] created index: {name}")
+        Args:
+          pil_image: a PIL Image (RGB/other modes accepted; we convert to RGB)
 
+        Returns:
+          np.ndarray of shape (D,), dtype float32, L2-normalized
+        """
+        batch = self.proc(images=pil_image.convert("RGB"), return_tensors="pt").to(self.device)
+        with torch.no_grad():
+            vec = self.model.get_image_features(**batch)  # shape: (1, D) tensor
+        v = vec.detach().cpu().numpy().astype("float32")  # → numpy
+        return self._norm(v)[0]  # → (D,)
 
-def recreate_index(es: Elasticsearch, name: str, body: dict) -> None:
-    """Delete and re-create an index (DANGEROUS: wipes data)."""
-    if es.indices.exists(index=name):
-        es.indices.delete(index=name)
-        print(f"[drop] deleted index: {name}")
-    es.indices.create(index=name, body=body)
-    print(f"[new] created index: {name}")
+    # ---------------------------------------------------------------------
+    # Public API: single text → vector
+    # ---------------------------------------------------------------------
+    def text_vec(self, text: str) -> np.ndarray:
+        """
+        Compute a single TEXT embedding (float32, unit-norm).
 
+        Tip: Keep prompts short and factual (avoid flowery language).
+             Example: "Ama Dablam mountain peak in the Himalayas, Nepal"
 
-# -----------------------------------------------------------------------------
-# CLI + main
-# -----------------------------------------------------------------------------
-def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(
-        description="Create (or re-create) Elasticsearch indices for the AI Mountain Peak Identifier demo."
-    )
-    p.add_argument("--peaks-index", default="peaks_catalog", help="Index name for the peaks catalog")
-    p.add_argument("--photos-index", default="photos", help="Index name for the photos")
-    p.add_argument("--dims", type=int, default=768,
-                   help="Embedding dimension (SigLIP-2 so400m@384 outputs 768)")
-    p.add_argument("--hnsw-m", type=int, default=16, help="HNSW 'm' (graph degree)")
-    p.add_argument("--hnsw-ef", type=int, default=128, help="HNSW ef_construction (build-time)")
-    p.add_argument("--recreate", action="store_true",
-                   help="Delete and recreate both indices (DANGEROUS: wipes data)")
-    return p.parse_args()
+        Returns:
+          np.ndarray of shape (D,), dtype float32, L2-normalized
+        """
+        toks = self.proc(
+            text=[text.lower()],                # lowercasing keeps things simple/consistent
+            padding="max_length",
+            max_length=self.max_text_len,
+            return_tensors="pt",
+        ).to(self.device)
+        with torch.no_grad():
+            vec = self.model.get_text_features(**toks)  # shape: (1, D) tensor
+        v = vec.detach().cpu().numpy().astype("float32")
+        return self._norm(v)[0]
 
+    # ---------------------------------------------------------------------
+    # (Nice-to-have) batched helpers — handy in notebooks / bulk indexing
+    # ---------------------------------------------------------------------
+    def images_vec(self, images: Iterable) -> np.ndarray:
+        """
+        Batch version of image_vec. Accepts an iterable of PIL Images.
+        Returns (N, D) float32 unit-norm array.
+        """
+        # The HF processor handles batching if you pass a list.
+        batch = self.proc(images=[im.convert("RGB") for im in images], return_tensors="pt").to(self.device)
+        with torch.no_grad():
+            vec = self.model.get_image_features(**batch)  # (N, D)
+        v = vec.detach().cpu().numpy().astype("float32")
+        return self._norm(v)
 
-def main():
-    args = parse_args()
-    es = es_client()
-
-    # Build mappings. IMPORTANT: --dims must match the model (SigLIP-2 so400m@384) output size.
-    peaks_body  = peaks_catalog_mapping(args.dims, args.hnsw_m, args.hnsw_ef)
-    photos_body = photos_mapping(args.dims, args.hnsw_m, args.hnsw_ef)
-
-    # Friendly cluster banner (works across client versions)
-    try:
-        info = es.info()
-        cluster = info.get("cluster_name")
-        version = (info.get("version") or {}).get("number")
-        print(f"Cluster: {cluster} (v{version})")
-    except Exception:
-        print("Cluster: <unavailable>")
-
-    print(f"Peaks index : {args.peaks_index}")
-    print(f"Photos index: {args.photos_index}")
-    print(f"Vector dims : {args.dims} | HNSW m={args.hnsw_m}, ef_construction={args.hnsw_ef}")
-
-    if args.recreate:
-        recreate_index(es, args.peaks_index,  peaks_body)
-        recreate_index(es, args.photos_index, photos_body)
-    else:
-        create_index_if_missing(es, args.peaks_index,  peaks_body)
-        create_index_if_missing(es, args.photos_index, photos_body)
-
-    print("[done] indices are ready.")
-
-
-if __name__ == "__main__":
-    main()
+    def texts_vec(self, texts: List[str]) -> np.ndarray:
+        """
+        Batch version of text_vec. Returns (N, D) float32 unit-norm array.
+        """
+        toks = self.proc(
+            text=[t.lower() for t in texts],
+            padding=True,
+            truncation=True,
+            max_length=self.max_text_len,
+            return_tensors="pt",
+        ).to(self.device)
+        with torch.no_grad():
+            vec = self.model.get_text_features(**toks)  # (N, D)
+        v = vec.detach().cpu().numpy().astype("float32")
+        return self._norm(v)

@@ -1,9 +1,9 @@
 # multimodal-mountain-peak-search
 
-> **Mountain peak identification & image search** with **SigLIP** embeddings on **Elasticsearch** (vector DB).  
-> Text ↔ image queries, kNN, RRF, EXIF geo, and a Streamlit demo.
+> **Mountain peak identification & image search** with **SigLIP2** embeddings on **Elasticsearch** (vector DB).  
+> Text ↔ image queries, kNN, EXIF geo, and a Streamlit demo.
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/<your-user-or-org>/multimodal-mountain-peak-search/blob/main/notebooks/02_quickstart_colab.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/navneet83/multimodal-mountain-peak-search/blob/main/notebooks/01_quickstart_colab.ipynb)
 
 ---
 
@@ -32,25 +32,25 @@ streamlit run scripts/app.py
 
 ## What this project does
 
-This repo shows how to **identify mountain peaks** (e.g., *Ama Dablam, Everest*) in your own photo library and **search images** by *name* or by *example photo*. It uses a modern multimodal embedding model (**SigLIP-2**) so **text** and **images** live in the **same vector space**. We store vectors in **Elasticsearch** (`dense_vector` + HNSW) and fuse multiple signals (image kNN, text kNN, metadata) with **RRF** to get stable, relevant results.
+This repo shows how to **identify mountain peaks** (e.g., *Ama Dablam, Everest*) and more! in your own photo library and **search images** by *name* or by *example photo*. It uses a modern multimodal embedding model (**SigLIP-2**) so **text** and **images** live in the **same vector space**. We store vectors in **Elasticsearch** (`dense_vector` + HNSW) and fuse multiple signals (image kNN, text kNN, metadata) to get stable, relevant results.
 
-**Two core demos**
+**Two search workflows**
 - **Search by name:** “Show me photos of *Ama Dablam*.” → text→image kNN over your library
 - **Identify from photo:** Upload any photo → top peak guesses + similar library photos
 
-Why it works well for peaks: small/far objects, tricky lighting, tons of look-alikes. We tackle this with **prompt ensembles**, **blended prototypes** (text + 1–3 reference images per peak), **geo-fencing**, and **RRF**.
+Why it works well for peaks: small/far objects, tricky lighting, tons of look-alikes. We tackle this with **prompt ensembles**, **blended prototypes** (text + 1–3 reference images per peak), and **geo-fencing**.
 
 ---
 
 ## Features
 
-- 🔎 **Text & image queries** — SigLIP-2 embeddings for both
-- 🧠 **Blended peak prototypes** — text prompts + reference images per peak
-- 🧭 **EXIF GPS & time** — optional geo-fence and timeline filters
-- ⚡ **Fast kNN** — Elasticsearch HNSW with cosine similarity
-- 🪄 **RRF fusion** — combine multiple weak signals into reliable results
-- 🖥️ **Streamlit UI** — thumbnails + full-size modal preview
-- 🧪 **Jupyter & Colab notebooks** — quickstart and reproducible examples
+- **Text & image queries** — SigLIP-2 embeddings for both
+- **Blended peak prototypes** — text prompts + reference images per peak
+- **EXIF GPS & time** — optional geo-fence and timeline filters
+- **Fast kNN** — Elasticsearch HNSW with cosine similarity
+- **RRF fusion** — combine multiple weak signals into reliable results
+- **Streamlit UI** — thumbnails + full-size modal preview
+- **Colab notebook** — quickstart and reproducible examples
 
 ---
 
@@ -70,8 +70,7 @@ multimodal-mountain-peak-search/
 │   ├── training_peaks/<peak_id>/*           # 1–3 reference photos per peak (optional, improves accuracy)
 │   └── images/**/*                 # photo library (put your own images here)
 └── notebooks/
-    ├── 01_quickstart_local_jupyter.ipynb
-    └── 02_quickstart_colab.ipynb
+    ├── 01_quickstart_colab.ipynb
 ```
 
 ---
@@ -84,7 +83,7 @@ pip install streamlit pillow pillow-heif elasticsearch torch torchvision transfo
 # If you have CUDA, install the matching torch wheel for your setup
 ```
 
-(Or use `requirements.txt` if included.)
+(Or use `requirements.txt`)
 
 **HEIC support:** `pip install pillow-heif`
 
@@ -112,7 +111,7 @@ Optional:
 # for local thumbnails in the UI
 export BASE_IMAGE_DIR="data/images"
 # switch models at runtime (default defined in embeddings.py)
-export SIGLIP_MODEL_ID="google/siglip-so400m-patch14-384"
+export SIGLIP_MODEL_ID="google/siglip2-base-patch16-224"
 ```
 
 ---
@@ -172,7 +171,6 @@ streamlit run scripts/app.py
 
 ## Notebooks
 
-- **Local Jupyter**: `notebooks/01_quickstart_local_jupyter.ipynb`  
 - **Google Colab**: `notebooks/02_quickstart_colab.ipynb` (with Colab badge at top)
 
 ---
@@ -250,15 +248,6 @@ python scripts/identify_and_similar.py --image data/images/IMG_0001.jpg --use-im
 
 ---
 
-## Troubleshooting
-
-- **`unknown setting [index.knn]`** → You’re on modern ES: use `dense_vector` + HNSW (this repo does). Recreate indices.
-- **HEIC won’t load** → `pip install pillow-heif`
-- **EXIF GPS errors** → Our parser guards odd formats; ensure you’re using this repo’s scripts.
-- **RRF “weight” unknown** → Use **unweighted** RRF (supported broadly). The UI/requests here use that.
-
----
-
 ## Contributing
 
 PRs welcome! Ideas:
@@ -270,4 +259,4 @@ PRs welcome! Ideas:
 
 ## License
 
-MIT (or change to your preference).
+MIT

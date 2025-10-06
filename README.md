@@ -6,7 +6,11 @@
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/navneet83/multimodal-mountain-peak-search/blob/main/notebooks/01_quickstart_colab.ipynb)
 
 ---
-
+## Demo:
+<video src="assets/streamlit_demo.mp4" controls width="900">
+  Your browser does not support the video tag.
+</video>
+---
 ## TL;DR — 5 commands
 
 ```bash
